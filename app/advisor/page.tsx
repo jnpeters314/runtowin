@@ -150,7 +150,7 @@ export default function AdvisorPage() {
           </div>
           <h1 className="text-xl font-bold">Campaign Coach</h1>
           <p className="text-slate-400 text-sm mt-0.5">
-            Ask anything about running for office — fundraising, messaging, voter contact, or strategy.
+            Your Run to Win Campaign Coach. Ask anything about fundraising, messaging, voter contact, or strategy.
           </p>
         </div>
       </div>

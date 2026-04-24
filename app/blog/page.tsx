@@ -95,7 +95,7 @@ export default function BlogPage() {
         <div className="mt-16 bg-navy-900 rounded-2xl p-8 sm:p-10 text-center">
           <h3 className="text-xl font-bold text-white mb-2">Get these insights in your inbox</h3>
           <p className="text-slate-300 text-sm mb-6 max-w-md mx-auto">
-            Subscribe to Campaign HQ Dispatch — practical tips and resources for down-ballot campaigns, delivered weekly.
+            Subscribe to the Run to Win Dispatch — practical tips and resources for down-ballot campaigns, delivered weekly.
           </p>
           <WaitlistForm source="blog-newsletter" buttonLabel="Subscribe" dark />
         </div>

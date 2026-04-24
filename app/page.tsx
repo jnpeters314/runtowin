@@ -97,7 +97,7 @@ export default function Home() {
               <span className="text-blue-400">with an AI coach in your corner.</span>
             </h1>
             <p className="text-lg sm:text-xl text-slate-300 leading-relaxed mb-8 max-w-2xl">
-              Campaign HQ gives down-ballot campaigns the playbooks, templates, and AI coaching that big-budget races take for granted. No campaign manager required.
+              Run to Win gives down-ballot campaigns the playbooks, templates, and AI coaching that big-budget races take for granted. No campaign manager required.
             </p>
             <div className="flex flex-col sm:flex-row gap-3">
               <Link

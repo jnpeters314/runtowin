@@ -36,8 +36,8 @@ export default function Footer() {
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-12">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-10">
           <div className="col-span-2 md:col-span-1">
-            <div className="text-white font-semibold text-base mb-2 tracking-tight">
-              CrowdBlue <span className="text-blue-400 font-light">Campaign HQ</span>
+            <div className="text-white font-extrabold text-base mb-2 tracking-widest uppercase">
+              Run to <span className="text-blue-400">Win</span>
             </div>
             <p className="text-sm leading-relaxed">
               AI-powered coaching and resources for down-ballot campaigns.
@@ -59,7 +59,7 @@ export default function Footer() {
           ))}
         </div>
         <div className="border-t border-navy-800 pt-6 flex flex-col sm:flex-row justify-between items-center gap-3 text-xs">
-          <p>© {new Date().getFullYear()} CrowdBlue. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} Run to Win. All rights reserved.</p>
           <p>Built for Democratic campaigns.</p>
         </div>
       </div>

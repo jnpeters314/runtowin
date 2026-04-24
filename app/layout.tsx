@@ -8,7 +8,7 @@ const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] })
 const geistMono = Geist_Mono({ variable: '--font-geist-mono', subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'CrowdBlue Campaign HQ — AI-Powered Campaign Coaching',
+  title: 'Run to Win — AI-Powered Campaign Coaching',
   description:
     'Launch, raise, and win. AI-powered coaching, playbooks, and resources for down-ballot Democratic campaigns.',
 }
