@@ -1,7 +1,8 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
-  /* config options here */
-};
+  // Required for Cloudflare Pages — output as edge-compatible Workers
+  // All routes default to the edge runtime via @cloudflare/next-on-pages
+}
 
-export default nextConfig;
+export default nextConfig
