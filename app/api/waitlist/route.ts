@@ -1,5 +1,3 @@
-export const runtime = 'edge'
-
 import { createClient } from '@supabase/supabase-js'
 
 function getSupabase() {
