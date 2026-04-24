@@ -4,9 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "npx @opennextjs/cloudflare build",
-    "preview": "npm run build && wrangler dev",
-    "deploy": "npm run build && wrangler deploy",
+    "build": "next build",
+    "preview": "npx @opennextjs/cloudflare build && wrangler dev",
+    "deploy": "npx @opennextjs/cloudflare build && wrangler deploy",
     "start": "next start",
     "lint": "eslint"
   },
