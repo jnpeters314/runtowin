@@ -7,6 +7,14 @@
   --color-navy-800: #133a75;
   --color-navy-700: #1a4a94;
 
+  /* Run to Win / Decide to Run brand blue */
+  --color-blue-50: #eef4ff;
+  --color-blue-400: #5b91d6;
+  --color-blue-600: #004AAD;
+  --color-blue-700: #003a8a;
+  --color-blue-800: #002b66;
+  --color-blue-950: #001533;
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }

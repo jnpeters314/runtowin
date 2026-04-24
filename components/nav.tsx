@@ -21,8 +21,10 @@ export default function Nav() {
     <header className="sticky top-0 z-50 bg-navy-900 border-b border-navy-800">
       <nav className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2">
-          <span className="text-white font-extrabold text-lg tracking-widest uppercase">
-            Run to <span className="text-blue-400">Win</span>
+          <span className="text-white text-lg leading-none">
+            <span className="font-black tracking-widest uppercase">RUN</span>
+            <span className="font-normal tracking-wide lowercase"> to </span>
+            <span className="font-black tracking-widest uppercase">WIN</span>
           </span>
         </Link>
 

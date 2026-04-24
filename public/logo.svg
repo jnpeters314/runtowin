@@ -1,10 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 310 44" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 52" fill="none">
+  <rect width="220" height="52" rx="10" fill="#004AAD"/>
   <text
     font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif"
-    font-weight="800"
-    font-size="38"
-    letter-spacing="1.5"
+    font-size="26"
+    letter-spacing="2"
+    fill="white"
   >
-    <tspan fill="#1a1a2e" x="0" y="36">RUN TO </tspan><tspan fill="#3b4dc8">WIN</tspan>
+    <tspan x="16" y="36" font-weight="900">RUN</tspan><tspan font-weight="400" letter-spacing="1"> to </tspan><tspan font-weight="900" letter-spacing="2">WIN</tspan>
   </text>
 </svg>
