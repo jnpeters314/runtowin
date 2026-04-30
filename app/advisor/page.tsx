@@ -1,13 +1,44 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { ArrowUp, Loader2 } from 'lucide-react'
+import { ArrowUp, Loader2, ChevronDown, ChevronUp, Settings2 } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { cn } from '@/lib/utils'
 
 type Message = {
   role: 'user' | 'assistant'
   content: string
 }
+
+type RaceContext = {
+  office: string
+  state: string
+  district: string
+  electionDate: string
+  party: string
+  isIncumbent: string
+}
+
+const EMPTY_CONTEXT: RaceContext = {
+  office: '',
+  state: '',
+  district: '',
+  electionDate: '',
+  party: '',
+  isIncumbent: '',
+}
+
+const US_STATES = [
+  'Alabama','Alaska','Arizona','Arkansas','California','Colorado','Connecticut',
+  'Delaware','Florida','Georgia','Hawaii','Idaho','Illinois','Indiana','Iowa',
+  'Kansas','Kentucky','Louisiana','Maine','Maryland','Massachusetts','Michigan',
+  'Minnesota','Mississippi','Missouri','Montana','Nebraska','Nevada','New Hampshire',
+  'New Jersey','New Mexico','New York','North Carolina','North Dakota','Ohio',
+  'Oklahoma','Oregon','Pennsylvania','Rhode Island','South Carolina','South Dakota',
+  'Tennessee','Texas','Utah','Vermont','Virginia','Washington','West Virginia',
+  'Wisconsin','Wyoming','Washington D.C.',
+]
 
 const STARTERS = [
   "We're 45 days out and fundraising has stalled. What should I do?",
@@ -20,24 +51,40 @@ const STARTERS = [
 
 const MAX_LENGTH = 2000
 
+function raceContextSummary(ctx: RaceContext): string {
+  const parts: string[] = []
+  if (ctx.office) parts.push(ctx.office)
+  if (ctx.state) parts.push(ctx.state)
+  if (ctx.district) parts.push(ctx.district)
+  if (ctx.party) parts.push(ctx.party)
+  if (ctx.isIncumbent === 'yes') parts.push('Incumbent')
+  else if (ctx.isIncumbent === 'no') parts.push('Challenger')
+  return parts.join(' · ')
+}
+
+function hasRaceContext(ctx: RaceContext): boolean {
+  return Object.values(ctx).some((v) => v !== '')
+}
+
 export default function AdvisorPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [inputError, setInputError] = useState('')
+  const [raceContext, setRaceContext] = useState<RaceContext>(EMPTY_CONTEXT)
+  const [showContextForm, setShowContextForm] = useState(false)
+  const [contextSaved, setContextSaved] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const messageCountRef = useRef(0)
   const isAtBottomRef = useRef(true)
 
-  // Track whether user has scrolled away from bottom
   const handleScroll = useCallback(() => {
     const el = scrollRef.current
     if (!el) return
     isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120
   }, [])
 
-  // Scroll to bottom on new messages; follow stream only if already at bottom
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
@@ -64,9 +111,7 @@ export default function AdvisorPage() {
     const next = [...messages, userMessage]
     setMessages(next)
     setInput('')
-    if (inputRef.current) {
-      inputRef.current.style.height = 'auto'
-    }
+    if (inputRef.current) inputRef.current.style.height = 'auto'
     setStreaming(true)
     isAtBottomRef.current = true
 
@@ -76,7 +121,10 @@ export default function AdvisorPage() {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: next }),
+        body: JSON.stringify({
+          messages: next,
+          raceContext: hasRaceContext(raceContext) ? raceContext : undefined,
+        }),
       })
 
       if (!res.ok) {
@@ -134,10 +182,7 @@ export default function AdvisorPage() {
     const val = e.target.value
     setInput(val)
     if (inputError) setInputError(validateInput(val))
-  }
-
-  function handleInput(e: React.FormEvent<HTMLTextAreaElement>) {
-    const el = e.currentTarget
+    const el = e.target
     el.style.height = 'auto'
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`
   }
@@ -157,31 +202,151 @@ export default function AdvisorPage() {
     }
   }
 
+  function saveContext() {
+    setShowContextForm(false)
+    setContextSaved(true)
+    setTimeout(() => setContextSaved(false), 2000)
+  }
+
+  function clearContext() {
+    setRaceContext(EMPTY_CONTEXT)
+    setShowContextForm(false)
+  }
+
   const empty = messages.length === 0
   const charsLeft = MAX_LENGTH - input.length
   const nearLimit = charsLeft < 200
+  const summary = raceContextSummary(raceContext)
 
   return (
-    // Fixed container: sits below the sticky nav, fills the rest of the viewport.
-    // Using fixed positioning takes this out of document flow so the layout footer
-    // doesn't add extra scroll height.
     <div className="fixed inset-x-0 top-16 bottom-0 flex flex-col bg-white">
 
       {/* Header */}
-      <div className="shrink-0 border-b border-slate-100 px-4 sm:px-6 py-4 bg-white">
+      <div className="shrink-0 border-b border-slate-100 px-4 sm:px-6 py-3 bg-white">
         <div className="max-w-2xl mx-auto flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center shrink-0">
             <span className="text-white text-xs font-black tracking-wide">RTW</span>
           </div>
-          <div>
+          <div className="min-w-0 flex-1">
             <h1 className="font-bold text-slate-900 text-sm leading-none">Campaign Coach</h1>
-            <p className="text-xs text-slate-400 mt-0.5">Ask anything about fundraising, messaging, voter contact, or strategy.</p>
+            {summary ? (
+              <p className="text-xs text-blue-600 mt-0.5 truncate">{summary}</p>
+            ) : (
+              <p className="text-xs text-slate-400 mt-0.5">Ask anything about fundraising, messaging, voter contact, or strategy.</p>
+            )}
           </div>
-          <div className="ml-auto flex items-center gap-1.5">
-            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-            <span className="text-xs font-medium text-slate-400">Live</span>
+          <div className="flex items-center gap-3 shrink-0">
+            <button
+              onClick={() => setShowContextForm((v) => !v)}
+              className={cn(
+                'flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors',
+                showContextForm
+                  ? 'bg-blue-50 text-blue-700'
+                  : summary
+                  ? 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+                  : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'
+              )}
+            >
+              <Settings2 size={13} />
+              <span className="hidden sm:inline">
+                {summary ? 'Edit race' : 'Set race'}
+              </span>
+            </button>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+              <span className="text-xs font-medium text-slate-400">Live</span>
+            </div>
           </div>
         </div>
+
+        {/* Race context form */}
+        {showContextForm && (
+          <div className="max-w-2xl mx-auto mt-3 bg-slate-50 border border-slate-200 rounded-xl p-4">
+            <p className="text-xs font-semibold text-slate-500 mb-3">Your race — the more you fill in, the more tailored the advice</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+              <div className="col-span-2 sm:col-span-1">
+                <label className="block text-[11px] font-medium text-slate-500 mb-1">Office seeking</label>
+                <input
+                  type="text"
+                  placeholder="e.g. City Council"
+                  value={raceContext.office}
+                  onChange={(e) => setRaceContext((c) => ({ ...c, office: e.target.value }))}
+                  className="w-full text-sm px-3 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:border-blue-300"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-slate-500 mb-1">State</label>
+                <select
+                  value={raceContext.state}
+                  onChange={(e) => setRaceContext((c) => ({ ...c, state: e.target.value }))}
+                  className="w-full text-sm px-3 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:border-blue-300"
+                >
+                  <option value="">Select…</option>
+                  {US_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-slate-500 mb-1">District / ward</label>
+                <input
+                  type="text"
+                  placeholder="e.g. District 4"
+                  value={raceContext.district}
+                  onChange={(e) => setRaceContext((c) => ({ ...c, district: e.target.value }))}
+                  className="w-full text-sm px-3 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:border-blue-300"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-slate-500 mb-1">Election date</label>
+                <input
+                  type="date"
+                  value={raceContext.electionDate}
+                  onChange={(e) => setRaceContext((c) => ({ ...c, electionDate: e.target.value }))}
+                  className="w-full text-sm px-3 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:border-blue-300"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-slate-500 mb-1">Party</label>
+                <select
+                  value={raceContext.party}
+                  onChange={(e) => setRaceContext((c) => ({ ...c, party: e.target.value }))}
+                  className="w-full text-sm px-3 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:border-blue-300"
+                >
+                  <option value="">Select…</option>
+                  <option>Democrat</option>
+                  <option>Republican</option>
+                  <option>Independent</option>
+                  <option>Green</option>
+                  <option>Libertarian</option>
+                  <option>Other / Non-partisan</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-slate-500 mb-1">Incumbent?</label>
+                <select
+                  value={raceContext.isIncumbent}
+                  onChange={(e) => setRaceContext((c) => ({ ...c, isIncumbent: e.target.value }))}
+                  className="w-full text-sm px-3 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:border-blue-300"
+                >
+                  <option value="">Select…</option>
+                  <option value="yes">Yes, I'm the incumbent</option>
+                  <option value="no">No, I'm the challenger</option>
+                  <option value="open">Open seat</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex items-center justify-between mt-3">
+              <button onClick={clearContext} className="text-xs text-slate-400 hover:text-slate-600">
+                Clear
+              </button>
+              <button
+                onClick={saveContext}
+                className="text-xs font-semibold px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+              >
+                {contextSaved ? 'Saved ✓' : 'Save'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Messages */}
@@ -201,6 +366,14 @@ export default function AdvisorPage() {
                 <p className="text-slate-500 text-sm max-w-md mx-auto leading-relaxed">
                   Your AI-powered strategist for down-ballot campaigns. Ask about fundraising, voter contact, messaging, or anything else on your plate.
                 </p>
+                {!summary && (
+                  <button
+                    onClick={() => setShowContextForm(true)}
+                    className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 border border-blue-200 hover:border-blue-300 rounded-lg px-3 py-1.5 transition-colors"
+                  >
+                    <Settings2 size={12} /> Set your race for tailored advice
+                  </button>
+                )}
               </div>
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider text-center mb-3">Try asking</p>
               <div className="grid sm:grid-cols-2 gap-2">
@@ -226,13 +399,35 @@ export default function AdvisorPage() {
                   )}
                   <div
                     className={cn(
-                      'max-w-[78%] rounded-2xl px-4 py-3 text-sm leading-relaxed prose-chat',
+                      'max-w-[82%] rounded-2xl px-4 py-3 text-sm leading-relaxed',
                       msg.role === 'user'
                         ? 'bg-blue-600 text-white rounded-tr-sm'
                         : 'bg-slate-100 text-slate-800 rounded-tl-sm'
                     )}
                   >
-                    {msg.content || (
+                    {msg.role === 'user' ? (
+                      msg.content
+                    ) : msg.content ? (
+                      <div className="prose-chat">
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            h2: ({ children }) => <h2 className="text-sm font-bold text-slate-900 mt-4 mb-1.5 first:mt-0">{children}</h2>,
+                            h3: ({ children }) => <h3 className="text-sm font-semibold text-slate-800 mt-3 mb-1 first:mt-0">{children}</h3>,
+                            p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                            ul: ({ children }) => <ul className="list-disc list-outside pl-4 mb-2 space-y-0.5">{children}</ul>,
+                            ol: ({ children }) => <ol className="list-decimal list-outside pl-4 mb-2 space-y-0.5">{children}</ol>,
+                            li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+                            strong: ({ children }) => <strong className="font-semibold text-slate-900">{children}</strong>,
+                            a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">{children}</a>,
+                            hr: () => <hr className="border-slate-300 my-3" />,
+                            blockquote: ({ children }) => <blockquote className="border-l-2 border-slate-300 pl-3 italic text-slate-600">{children}</blockquote>,
+                          }}
+                        >
+                          {msg.content}
+                        </ReactMarkdown>
+                      </div>
+                    ) : (
                       <span className="inline-flex items-center gap-1.5 text-slate-400">
                         <Loader2 size={13} className="animate-spin" /> Thinking…
                       </span>
@@ -261,7 +456,6 @@ export default function AdvisorPage() {
               value={input}
               onChange={handleChange}
               onKeyDown={handleKeyDown}
-              onInput={handleInput}
               onDrop={handleDrop}
               onDragOver={(e) => e.preventDefault()}
               onPaste={handlePaste}
