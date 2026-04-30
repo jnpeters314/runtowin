@@ -70,6 +70,7 @@ export default function AdvisorPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
+  const [streamingStatus, setStreamingStatus] = useState('Thinking…')
   const [inputError, setInputError] = useState('')
   const [raceContext, setRaceContext] = useState<RaceContext>(EMPTY_CONTEXT)
   const [showContextForm, setShowContextForm] = useState(false)
@@ -113,6 +114,7 @@ export default function AdvisorPage() {
     setInput('')
     if (inputRef.current) inputRef.current.style.height = 'auto'
     setStreaming(true)
+    setStreamingStatus('Thinking…')
     isAtBottomRef.current = true
 
     setMessages([...next, { role: 'assistant', content: '' }])
@@ -145,16 +147,28 @@ export default function AdvisorPage() {
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let accumulated = ''
+      const STATUS_RE = /%%STATUS:([^%]+)%%\n?/g
 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-        accumulated += decoder.decode(value, { stream: true })
-        setMessages((prev) => {
-          const updated = [...prev]
-          updated[updated.length - 1] = { role: 'assistant', content: accumulated }
-          return updated
-        })
+        const chunk = decoder.decode(value, { stream: true })
+
+        // Extract and strip status signals; update loading label
+        let match
+        STATUS_RE.lastIndex = 0
+        while ((match = STATUS_RE.exec(chunk)) !== null) {
+          setStreamingStatus(match[1])
+        }
+        const content = chunk.replace(STATUS_RE, '')
+        if (content) {
+          accumulated += content
+          setMessages((prev) => {
+            const updated = [...prev]
+            updated[updated.length - 1] = { role: 'assistant', content: accumulated }
+            return updated
+          })
+        }
       }
     } catch {
       setMessages((prev) => {
@@ -429,7 +443,8 @@ export default function AdvisorPage() {
                       </div>
                     ) : (
                       <span className="inline-flex items-center gap-1.5 text-slate-400">
-                        <Loader2 size={13} className="animate-spin" /> Thinking…
+                        <Loader2 size={13} className="animate-spin" />
+                        {i === messages.length - 1 && streaming ? streamingStatus : 'Thinking…'}
                       </span>
                     )}
                   </div>

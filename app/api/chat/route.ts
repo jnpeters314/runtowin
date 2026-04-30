@@ -178,92 +178,86 @@ export async function POST(request: Request) {
   }
 
   const systemPrompt = buildSystemPrompt(raceContext)
-
-  // Phase 1: resolve any tool calls (non-streaming)
-  let currentMessages: Anthropic.MessageParam[] = messages
-
-  for (let i = 0; i < 5; i++) {
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 2048,
-      system: systemPrompt,
-      tools: TOOLS,
-      messages: currentMessages,
-    })
-
-    if (response.stop_reason !== 'tool_use') {
-      // No tools used — stream the final response directly from the last message content
-      // We already have the full content; stream it as text
-      const fullText = response.content
-        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-        .map((b) => b.text)
-        .join('')
-
-      const encoder = new TextEncoder()
-      const readable = new ReadableStream({
-        start(controller) {
-          controller.enqueue(encoder.encode(fullText))
-          controller.close()
-        },
-      })
-
-      return new Response(readable, {
-        headers: {
-          'Content-Type': 'text/plain; charset=utf-8',
-          'Cache-Control': 'no-cache',
-        },
-      })
-    }
-
-    // Execute tool calls
-    const toolUseBlocks = response.content.filter(
-      (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use'
-    )
-
-    const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(
-      toolUseBlocks.map(async (block) => {
-        let result = ''
-        if (block.name === 'web_search') {
-          const input = block.input as { query: string }
-          result = await runWebSearch(input.query)
-        }
-        return {
-          type: 'tool_result' as const,
-          tool_use_id: block.id,
-          content: result,
-        }
-      })
-    )
-
-    currentMessages = [
-      ...currentMessages,
-      { role: 'assistant' as const, content: response.content },
-      { role: 'user' as const, content: toolResults },
-    ]
-  }
-
-  // Fallback: generate final response after tool loop
-  const finalStream = client.messages.stream({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 2048,
-    system: systemPrompt,
-    messages: currentMessages,
-  })
-
   const encoder = new TextEncoder()
-  const readable = new ReadableStream({
-    async start(controller) {
-      for await (const chunk of finalStream) {
-        if (
-          chunk.type === 'content_block_delta' &&
-          chunk.delta.type === 'text_delta'
-        ) {
-          controller.enqueue(encoder.encode(chunk.delta.text))
+
+  // Open the response stream immediately so the browser connection is live
+  // before any Claude or Tavily calls begin.
+  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>()
+  const writer = writable.getWriter()
+
+  // Status signals are injected inline: %%STATUS:text%%\n
+  // The frontend strips them and shows them in the loading bubble.
+  const writeStatus = (text: string) =>
+    writer.write(encoder.encode(`%%STATUS:${text}%%\n`))
+
+  const writeText = (text: string) =>
+    writer.write(encoder.encode(text))
+
+  ;(async () => {
+    try {
+      let currentMessages: Anthropic.MessageParam[] = messages
+
+      for (let i = 0; i < 5; i++) {
+        // Stream each round — if Claude produces text (no tool use), it flows
+        // directly to the client without waiting for the full response.
+        const stream = client.messages.stream({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 2048,
+          system: systemPrompt,
+          tools: TOOLS,
+          messages: currentMessages,
+        })
+
+        for await (const chunk of stream) {
+          if (
+            chunk.type === 'content_block_delta' &&
+            chunk.delta.type === 'text_delta'
+          ) {
+            await writeText(chunk.delta.text)
+          }
         }
+
+        const finalMsg = await stream.finalMessage()
+
+        // If Claude finished without calling a tool, we're done.
+        if (finalMsg.stop_reason !== 'tool_use') break
+
+        // Claude wants to search — signal the frontend and run Tavily.
+        await writeStatus('Searching the web…')
+
+        const toolUseBlocks = finalMsg.content.filter(
+          (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use'
+        )
+
+        const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(
+          toolUseBlocks.map(async (block) => {
+            let result = ''
+            if (block.name === 'web_search') {
+              const input = block.input as { query: string }
+              result = await runWebSearch(input.query)
+            }
+            return {
+              type: 'tool_result' as const,
+              tool_use_id: block.id,
+              content: result,
+            }
+          })
+        )
+
+        await writeStatus('Drafting your answer…')
+
+        currentMessages = [
+          ...currentMessages,
+          { role: 'assistant' as const, content: finalMsg.content },
+          { role: 'user' as const, content: toolResults },
+        ]
       }
-      controller.close()
-    },
-  })
+    } catch {
+      await writeText('\n\nSomething went wrong. Please try again.')
+    } finally {
+      await writer.close()
+    }
+  })()
 
   return new Response(readable, {
     headers: {
