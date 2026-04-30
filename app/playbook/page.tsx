@@ -8,24 +8,28 @@ const playbooks = [
     accent: 'bg-blue-600',
     guides: [
       {
-        title: 'The First 30 Days of Fundraising',
-        desc: 'How to build your initial donor base from your personal network before you ask strangers for money.',
-        time: '12 min read',
+        title: 'The First 72 Hours Fundraising Sprint',
+        desc: 'Raise your first $5k with a 3-message email/SMS cadence, a donor ladder, and a follow-up call script.',
+        time: '8 min read',
+        href: '/resources/first-72-hours-fundraising-sprint',
       },
       {
-        title: 'Call Time That Actually Works',
-        desc: 'The system, the script, and the mindset for making fundraising calls without dreading it.',
+        title: 'Digital Ads on a Small Budget',
+        desc: 'Where to spend, how to test, and what to measure when you only have a few hundred dollars.',
         time: '10 min read',
+        href: '/resources/digital-ads-101',
+      },
+      {
+        title: 'Call Time & Fundraising Basics',
+        desc: 'The system, the script, and the mindset for making fundraising calls without dreading it. Ask your Campaign Coach.',
+        time: 'Ask Coach',
+        href: '/advisor',
       },
       {
         title: 'End-of-Quarter Fundraising Pushes',
-        desc: 'How to use FEC deadlines as a reason to ask — and why they work better than most campaigns realize.',
-        time: '8 min read',
-      },
-      {
-        title: 'Small-Dollar Online Fundraising',
-        desc: 'Email sequences, social posts, and recurring donor programs that build a sustainable base.',
-        time: '15 min read',
+        desc: 'How to use FEC deadlines as a reason to ask — and why they work better than most campaigns realize. Ask your Campaign Coach.',
+        time: 'Ask Coach',
+        href: '/advisor',
       },
     ],
   },
@@ -35,19 +39,22 @@ const playbooks = [
     accent: 'bg-green-600',
     guides: [
       {
-        title: 'Door Knocking: A Practical Field Guide',
-        desc: 'What to say, what to bring, how to handle objections, and how to track your results.',
-        time: '14 min read',
-      },
-      {
-        title: 'Phone Banking for Local Campaigns',
-        desc: 'How to run a phone bank with volunteers, and what separates effective calls from annoying ones.',
+        title: 'Voter Contact 101: ID → Persuasion → GOTV',
+        desc: 'A simple path from building your universe to mobilizing supporters, with scripts and cut-list guidance.',
         time: '10 min read',
+        href: '/resources/voter-contact-101',
       },
       {
-        title: 'Voter ID and Targeting on a Small Budget',
-        desc: 'How to find your likely supporters without expensive data vendors.',
-        time: '9 min read',
+        title: 'Phonebank & Textbank Starter Kit',
+        desc: 'Set up your first volunteer shifts in under a day: scripts, tools, and a simple tracking sheet.',
+        time: '8 min read',
+        href: '/resources/phonebank-textbank-starter-kit',
+      },
+      {
+        title: 'Volunteer Onboarding Kit',
+        desc: 'Recruit, train, and retain volunteers with clear roles, onboarding flows, and a simple tracking loop.',
+        time: '10 min read',
+        href: '/resources/volunteer-onboarding-kit',
       },
     ],
   },
@@ -57,19 +64,22 @@ const playbooks = [
     accent: 'bg-purple-600',
     guides: [
       {
-        title: 'Social Media for Down-Ballot Campaigns',
-        desc: 'What platforms to prioritize, how often to post, and what content actually moves the needle.',
-        time: '11 min read',
+        title: '4-Week Content Calendar',
+        desc: 'A plug-and-play plan for weekly updates, volunteer asks, short videos, and fundraising moments.',
+        time: '6 min read',
+        href: '/resources/4-week-content-calendar',
       },
       {
-        title: 'Email List Building from Scratch',
-        desc: 'How to grow a list of engaged supporters who will open and act on your messages.',
-        time: '8 min read',
+        title: 'Digital Ads 101 for Small Budgets',
+        desc: 'Which channels to use, how to split your budget, and what creative actually converts.',
+        time: '10 min read',
+        href: '/resources/digital-ads-101',
       },
       {
-        title: 'Digital Ads on a Shoestring Budget',
-        desc: 'When to spend on paid digital, what to run, and how to measure if it\'s working.',
-        time: '12 min read',
+        title: 'Press Basics: Announcements & Rapid Response',
+        desc: 'Build media relationships, write pitches that get opened, and handle breaking news without a press team.',
+        time: '10 min read',
+        href: '/resources/press-basics',
       },
     ],
   },
@@ -79,19 +89,22 @@ const playbooks = [
     accent: 'bg-orange-600',
     guides: [
       {
-        title: 'Building Your GOTV Plan',
-        desc: 'How to map your turnout operation 60 days out so you\'re not scrambling in the final week.',
-        time: '16 min read',
+        title: 'GOTV Mini-Playbook: Final Two Weeks',
+        desc: 'Turn support into turnout with a crisp two-week calendar, coverage goals, and ballot-chase tactics.',
+        time: '12 min read',
+        href: '/resources/gotv-mini-playbook',
       },
       {
-        title: 'The Final 7 Days',
-        desc: 'A day-by-day plan for the closing stretch: voter contact, messaging, volunteer coordination.',
-        time: '10 min read',
+        title: 'Launch Day Toolkit',
+        desc: 'Everything you need to announce your run: launch email, three social posts, and a media note.',
+        time: '8 min read',
+        href: '/resources/launch-day-toolkit',
       },
       {
-        title: 'Election Day Operations',
-        desc: 'Poll monitoring, voter rides, and keeping your team coordinated when it matters most.',
-        time: '9 min read',
+        title: 'Compliance Basics for First-Time Candidates',
+        desc: 'Open a bank account, designate a treasurer, and track contributions correctly from day one.',
+        time: '8 min read',
+        href: '/resources/compliance-basics',
       },
     ],
   },
@@ -119,9 +132,10 @@ export default function PlaybookPage() {
             </div>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {section.guides.map((guide) => (
-                <div
+                <Link
                   key={guide.title}
-                  className="border border-slate-200 rounded-xl bg-white p-6 hover:shadow-md transition-shadow group cursor-pointer"
+                  href={guide.href}
+                  className="border border-slate-200 rounded-xl bg-white p-6 hover:shadow-md transition-shadow group"
                 >
                   <div className={`w-1 h-8 rounded-full ${section.accent} mb-4`} />
                   <h3 className="font-semibold text-slate-900 mb-2 leading-snug group-hover:text-blue-600 transition-colors">
@@ -132,7 +146,7 @@ export default function PlaybookPage() {
                     <span className="text-xs text-slate-400">{guide.time}</span>
                     <ChevronRight size={16} className="text-slate-400 group-hover:text-blue-600 transition-colors" />
                   </div>
-                </div>
+                </Link>
               ))}
             </div>
           </div>
