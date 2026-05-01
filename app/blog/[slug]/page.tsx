@@ -1,10 +1,23 @@
 import { notFound } from 'next/navigation'
+import type { Metadata } from 'next'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { blogPosts, getBlogPost, type ContentBlock } from '@/lib/content/blog'
 
 export function generateStaticParams() {
   return blogPosts.map((p) => ({ slug: p.slug }))
+}
+
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params
+  const post = getBlogPost(slug)
+  if (!post) return {}
+  return {
+    title: post.title,
+    description: post.desc,
+    openGraph: { title: post.title, description: post.desc, type: 'article' },
+    twitter: { title: post.title, description: post.desc },
+  }
 }
 
 function renderBlock(block: ContentBlock, i: number) {

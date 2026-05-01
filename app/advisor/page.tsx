@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { ArrowUp, Loader2, ChevronDown, ChevronUp, Settings2 } from 'lucide-react'
+import { ArrowUp, Loader2, Settings2, Copy, Check, RotateCcw } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { cn } from '@/lib/utils'
@@ -75,10 +75,26 @@ export default function AdvisorPage() {
   const [raceContext, setRaceContext] = useState<RaceContext>(EMPTY_CONTEXT)
   const [showContextForm, setShowContextForm] = useState(false)
   const [contextSaved, setContextSaved] = useState(false)
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const messageCountRef = useRef(0)
   const isAtBottomRef = useRef(true)
+
+  // Load persisted race context from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('rtw-race-context')
+      if (saved) setRaceContext(JSON.parse(saved))
+    } catch {}
+  }, [])
+
+  // Persist race context whenever it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem('rtw-race-context', JSON.stringify(raceContext))
+    } catch {}
+  }, [raceContext])
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current
@@ -95,6 +111,21 @@ export default function AdvisorPage() {
       el.scrollTop = el.scrollHeight
     }
   }, [messages])
+
+  function resetConversation() {
+    if (streaming) return
+    setMessages([])
+    setInput('')
+    setInputError('')
+    messageCountRef.current = 0
+  }
+
+  function copyMessage(content: string, index: number) {
+    navigator.clipboard.writeText(content).then(() => {
+      setCopiedIndex(index)
+      setTimeout(() => setCopiedIndex(null), 2000)
+    })
+  }
 
   function validateInput(text: string): string {
     if (text.length > MAX_LENGTH) return `Please keep messages under ${MAX_LENGTH} characters.`
@@ -249,7 +280,18 @@ export default function AdvisorPage() {
               <p className="text-xs text-slate-400 mt-0.5">Ask anything about fundraising, messaging, voter contact, or strategy.</p>
             )}
           </div>
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
+            {!empty && (
+              <button
+                onClick={resetConversation}
+                disabled={streaming}
+                title="New conversation"
+                className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-50 disabled:opacity-40 transition-colors"
+              >
+                <RotateCcw size={13} />
+                <span className="hidden sm:inline">New chat</span>
+              </button>
+            )}
             <button
               onClick={() => setShowContextForm((v) => !v)}
               className={cn(
@@ -411,36 +453,47 @@ export default function AdvisorPage() {
                       <span className="text-white text-[9px] font-black">RTW</span>
                     </div>
                   )}
-                  <div
-                    className={cn(
-                      'max-w-[82%] rounded-2xl px-4 py-3 text-sm leading-relaxed',
-                      msg.role === 'user'
-                        ? 'bg-blue-600 text-white rounded-tr-sm'
-                        : 'bg-slate-100 text-slate-800 rounded-tl-sm'
-                    )}
-                  >
+                  <div className={cn(
+                    'max-w-[82%] rounded-2xl px-4 py-3 text-sm leading-relaxed',
+                    msg.role === 'user'
+                      ? 'bg-blue-600 text-white rounded-tr-sm'
+                      : 'bg-slate-100 text-slate-800 rounded-tl-sm'
+                  )}>
                     {msg.role === 'user' ? (
                       msg.content
                     ) : msg.content ? (
-                      <div className="prose-chat">
-                        <ReactMarkdown
-                          remarkPlugins={[remarkGfm]}
-                          components={{
-                            h2: ({ children }) => <h2 className="text-sm font-bold text-slate-900 mt-4 mb-1.5 first:mt-0">{children}</h2>,
-                            h3: ({ children }) => <h3 className="text-sm font-semibold text-slate-800 mt-3 mb-1 first:mt-0">{children}</h3>,
-                            p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-                            ul: ({ children }) => <ul className="list-disc list-outside pl-4 mb-2 space-y-0.5">{children}</ul>,
-                            ol: ({ children }) => <ol className="list-decimal list-outside pl-4 mb-2 space-y-0.5">{children}</ol>,
-                            li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-                            strong: ({ children }) => <strong className="font-semibold text-slate-900">{children}</strong>,
-                            a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">{children}</a>,
-                            hr: () => <hr className="border-slate-300 my-3" />,
-                            blockquote: ({ children }) => <blockquote className="border-l-2 border-slate-300 pl-3 italic text-slate-600">{children}</blockquote>,
-                          }}
-                        >
-                          {msg.content}
-                        </ReactMarkdown>
-                      </div>
+                      <>
+                        <div className="prose-chat">
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                            components={{
+                              h2: ({ children }) => <h2 className="text-sm font-bold text-slate-900 mt-4 mb-1.5 first:mt-0">{children}</h2>,
+                              h3: ({ children }) => <h3 className="text-sm font-semibold text-slate-800 mt-3 mb-1 first:mt-0">{children}</h3>,
+                              p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                              ul: ({ children }) => <ul className="list-disc list-outside pl-4 mb-2 space-y-0.5">{children}</ul>,
+                              ol: ({ children }) => <ol className="list-decimal list-outside pl-4 mb-2 space-y-0.5">{children}</ol>,
+                              li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+                              strong: ({ children }) => <strong className="font-semibold text-slate-900">{children}</strong>,
+                              a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">{children}</a>,
+                              hr: () => <hr className="border-slate-300 my-3" />,
+                              blockquote: ({ children }) => <blockquote className="border-l-2 border-slate-300 pl-3 italic text-slate-600">{children}</blockquote>,
+                            }}
+                          >
+                            {msg.content}
+                          </ReactMarkdown>
+                        </div>
+                        {!(i === messages.length - 1 && streaming) && (
+                          <button
+                            onClick={() => copyMessage(msg.content, i)}
+                            className="mt-2 flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-600 transition-colors"
+                          >
+                            {copiedIndex === i
+                              ? <><Check size={11} className="text-green-500" /><span className="text-green-500">Copied</span></>
+                              : <><Copy size={11} /><span>Copy</span></>
+                            }
+                          </button>
+                        )}
+                      </>
                     ) : (
                       <span className="inline-flex items-center gap-1.5 text-slate-400">
                         <Loader2 size={13} className="animate-spin" />

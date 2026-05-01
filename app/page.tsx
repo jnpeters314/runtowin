@@ -3,7 +3,7 @@ import { ArrowRight, BookOpen, FileText, Layers, Mail, MessageSquare, Zap } from
 import WaitlistForm from '@/components/waitlist-form'
 
 const steps = [
-  { n: '01', title: 'Create your campaign page', body: 'Set up your CrowdBlue profile with your race, bio, and photo.' },
+  { n: '01', title: 'Talk to your Campaign Coach', body: 'Start with a conversation. Tell your Coach your race, timeline, and biggest challenge.' },
   { n: '02', title: 'Set a fundraising goal', body: 'Give donors a target to rally around and a progress bar to watch.' },
   { n: '03', title: 'Tell your story', body: "Write your first post — why you're running, in your own words." },
   { n: '04', title: 'Import your contacts', body: 'Seed your supporter list with people who already know and trust you.' },
