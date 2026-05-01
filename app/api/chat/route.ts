@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { getCloudflareContext } from '@opennextjs/cloudflare'
 
 const client = new Anthropic()
 
@@ -175,6 +176,27 @@ export async function POST(request: Request) {
       { error: "That input isn't something I can process. Please ask a campaign-related question." },
       { status: 400 }
     )
+  }
+
+  // Rate limiting: 20 requests per hour per IP.
+  // Gracefully skipped in local dev where the binding isn't available.
+  try {
+    const { env } = getCloudflareContext()
+    if (env.RATE_LIMITER) {
+      const ip =
+        request.headers.get('CF-Connecting-IP') ??
+        request.headers.get('X-Forwarded-For')?.split(',')[0].trim() ??
+        'anonymous'
+      const { success } = await env.RATE_LIMITER.limit({ key: ip })
+      if (!success) {
+        return Response.json(
+          { error: "You've sent a lot of messages. Please wait a few minutes and try again." },
+          { status: 429 }
+        )
+      }
+    }
+  } catch {
+    // Not in a Cloudflare Workers context — skip rate limiting
   }
 
   const systemPrompt = buildSystemPrompt(raceContext)

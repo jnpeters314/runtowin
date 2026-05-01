@@ -6,3 +6,11 @@ compatibility_flags = ["nodejs_compat"]
 [assets]
 directory = ".open-next/assets"
 binding = "ASSETS"
+
+# Rate limiting: 20 requests per hour per IP on the /api/chat endpoint.
+# Uses Cloudflare's native rate limiting — no external service required.
+[[unsafe.bindings]]
+name = "RATE_LIMITER"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 20, period = 3600 }
