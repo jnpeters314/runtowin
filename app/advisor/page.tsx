@@ -264,7 +264,7 @@ export default function AdvisorPage() {
   const summary = raceContextSummary(raceContext)
 
   return (
-    <div className="fixed inset-x-0 top-16 bottom-0 flex flex-col bg-white">
+    <div className="fixed inset-x-0 top-26 bottom-0 flex flex-col bg-white">
 
       {/* Header */}
       <div className="shrink-0 border-b border-slate-100 px-4 sm:px-6 py-3 bg-white">
