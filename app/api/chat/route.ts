@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { getCloudflareContext } from '@opennextjs/cloudflare'
+import { createAuthedSupabase } from '@/lib/supabase-server'
 
 const client = new Anthropic()
 
@@ -153,7 +154,16 @@ function containsBlockedContent(text: string): boolean {
 
 export async function POST(request: Request) {
   const body = await request.json()
-  const { messages, raceContext } = body
+  const { messages, raceContext, conversationId } = body
+
+  // Optional auth for message persistence — gracefully skipped if absent
+  const token = request.headers.get('Authorization')?.replace('Bearer ', '')
+  let persistSupabase: ReturnType<typeof createAuthedSupabase> | null = null
+  if (token && conversationId) {
+    persistSupabase = createAuthedSupabase(token)
+    const { data: { user } } = await persistSupabase.auth.getUser()
+    if (!user) persistSupabase = null
+  }
 
   if (!Array.isArray(messages) || messages.length === 0) {
     return Response.json({ error: 'Invalid request.' }, { status: 400 })
@@ -207,16 +217,34 @@ export async function POST(request: Request) {
   const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>()
   const writer = writable.getWriter()
 
+  let accumulatedText = ''
+
   // Status signals are injected inline: %%STATUS:text%%\n
   // The frontend strips them and shows them in the loading bubble.
   const writeStatus = (text: string) =>
     writer.write(encoder.encode(`%%STATUS:${text}%%\n`))
 
-  const writeText = (text: string) =>
-    writer.write(encoder.encode(text))
+  const writeText = (text: string) => {
+    accumulatedText += text
+    return writer.write(encoder.encode(text))
+  }
 
   ;(async () => {
     try {
+      // Save the user's message before streaming
+      if (persistSupabase && conversationId) {
+        const userMsg = messages[messages.length - 1]
+        await persistSupabase.from('chat_messages').insert({
+          conversation_id: conversationId,
+          role: userMsg.role,
+          content: userMsg.content,
+        })
+        await persistSupabase
+          .from('conversations')
+          .update({ updated_at: new Date().toISOString() })
+          .eq('id', conversationId)
+      }
+
       let currentMessages: Anthropic.MessageParam[] = messages
 
       for (let i = 0; i < 5; i++) {
@@ -277,6 +305,14 @@ export async function POST(request: Request) {
     } catch {
       await writeText('\n\nSomething went wrong. Please try again.')
     } finally {
+      // Save the complete assistant response
+      if (persistSupabase && conversationId && accumulatedText) {
+        await persistSupabase.from('chat_messages').insert({
+          conversation_id: conversationId,
+          role: 'assistant',
+          content: accumulatedText,
+        })
+      }
       await writer.close()
     }
   })()

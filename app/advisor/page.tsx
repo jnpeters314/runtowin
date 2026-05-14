@@ -1,10 +1,12 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { ArrowUp, Loader2, Settings2, Copy, Check, RotateCcw } from 'lucide-react'
+import { ArrowUp, Loader2, Settings2, Copy, Check, RotateCcw, Plus, MessageSquare } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/lib/auth-context'
+import AuthModal from '@/components/auth-modal'
 
 type Message = {
   role: 'user' | 'assistant'
@@ -18,6 +20,14 @@ type RaceContext = {
   electionDate: string
   party: string
   isIncumbent: string
+}
+
+type Conversation = {
+  id: string
+  title: string
+  race_context: RaceContext | null
+  created_at: string
+  updated_at: string
 }
 
 const EMPTY_CONTEXT: RaceContext = {
@@ -66,7 +76,35 @@ function hasRaceContext(ctx: RaceContext): boolean {
   return Object.values(ctx).some((v) => v !== '')
 }
 
+function groupByDate(conversations: Conversation[]) {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const yesterday = new Date(today)
+  yesterday.setDate(yesterday.getDate() - 1)
+  const weekAgo = new Date(today)
+  weekAgo.setDate(weekAgo.getDate() - 7)
+
+  const groups: { label: string; items: Conversation[] }[] = [
+    { label: 'Today', items: [] },
+    { label: 'Yesterday', items: [] },
+    { label: 'Past 7 days', items: [] },
+    { label: 'Older', items: [] },
+  ]
+
+  for (const conv of conversations) {
+    const d = new Date(conv.updated_at)
+    d.setHours(0, 0, 0, 0)
+    if (d >= today) groups[0].items.push(conv)
+    else if (d >= yesterday) groups[1].items.push(conv)
+    else if (d >= weekAgo) groups[2].items.push(conv)
+    else groups[3].items.push(conv)
+  }
+
+  return groups.filter((g) => g.items.length > 0)
+}
+
 export default function AdvisorPage() {
+  const { user, getToken } = useAuth()
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
@@ -76,12 +114,20 @@ export default function AdvisorPage() {
   const [showContextForm, setShowContextForm] = useState(false)
   const [contextSaved, setContextSaved] = useState(false)
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
+  const [showAuth, setShowAuth] = useState(false)
+
+  // Conversation persistence state
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
+  const [loadingConversations, setLoadingConversations] = useState(false)
+  const [loadingConversation, setLoadingConversation] = useState(false)
+
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const messageCountRef = useRef(0)
   const isAtBottomRef = useRef(true)
 
-  // Load persisted race context from localStorage on mount
+  // Load race context from localStorage
   useEffect(() => {
     try {
       const saved = localStorage.getItem('rtw-race-context')
@@ -89,12 +135,71 @@ export default function AdvisorPage() {
     } catch {}
   }, [])
 
-  // Persist race context whenever it changes
   useEffect(() => {
     try {
       localStorage.setItem('rtw-race-context', JSON.stringify(raceContext))
     } catch {}
   }, [raceContext])
+
+  // Fetch conversation list when user signs in
+  useEffect(() => {
+    if (!user) {
+      setConversations([])
+      setActiveConversationId(null)
+      return
+    }
+    fetchConversations()
+  }, [user])
+
+  async function fetchConversations() {
+    setLoadingConversations(true)
+    try {
+      const token = await getToken()
+      const res = await fetch('/api/conversations', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.ok) {
+        const { conversations } = await res.json()
+        setConversations(conversations ?? [])
+      }
+    } finally {
+      setLoadingConversations(false)
+    }
+  }
+
+  async function loadConversation(id: string) {
+    if (id === activeConversationId || streaming) return
+    setLoadingConversation(true)
+    try {
+      const token = await getToken()
+      const res = await fetch(`/api/conversations/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.ok) {
+        const { conversation, messages: msgs } = await res.json()
+        setActiveConversationId(id)
+        setMessages(msgs.map((m: { role: string; content: string }) => ({
+          role: m.role as 'user' | 'assistant',
+          content: m.content,
+        })))
+        if (conversation.race_context) {
+          setRaceContext(conversation.race_context)
+        }
+        messageCountRef.current = msgs.length
+      }
+    } finally {
+      setLoadingConversation(false)
+    }
+  }
+
+  function startNewConversation() {
+    if (streaming) return
+    setMessages([])
+    setInput('')
+    setInputError('')
+    setActiveConversationId(null)
+    messageCountRef.current = 0
+  }
 
   const handleScroll = useCallback(() => {
     const el = scrollRef.current
@@ -117,6 +222,7 @@ export default function AdvisorPage() {
     setMessages([])
     setInput('')
     setInputError('')
+    setActiveConversationId(null)
     messageCountRef.current = 0
   }
 
@@ -150,13 +256,40 @@ export default function AdvisorPage() {
 
     setMessages([...next, { role: 'assistant', content: '' }])
 
+    // Create conversation on first message if logged in
+    let convId = activeConversationId
+    if (user && !convId) {
+      try {
+        const token = await getToken()
+        const res = await fetch('/api/conversations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            title: text.trim().slice(0, 60),
+            raceContext: hasRaceContext(raceContext) ? raceContext : null,
+          }),
+        })
+        if (res.ok) {
+          const { conversation } = await res.json()
+          convId = conversation.id
+          setActiveConversationId(convId)
+          setConversations((prev) => [conversation, ...prev])
+        }
+      } catch {}
+    }
+
     try {
+      const token = user ? await getToken() : null
       const res = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           messages: next,
           raceContext: hasRaceContext(raceContext) ? raceContext : undefined,
+          conversationId: convId ?? undefined,
         }),
       })
 
@@ -185,7 +318,6 @@ export default function AdvisorPage() {
         if (done) break
         const chunk = decoder.decode(value, { stream: true })
 
-        // Extract and strip status signals; update loading label
         let match
         STATUS_RE.lastIndex = 0
         while ((match = STATUS_RE.exec(chunk)) !== null) {
@@ -200,6 +332,14 @@ export default function AdvisorPage() {
             return updated
           })
         }
+      }
+
+      // Bump the active conversation to the top of the list
+      if (convId) {
+        setConversations((prev) =>
+          prev.map((c) => c.id === convId ? { ...c, updated_at: new Date().toISOString() } : c)
+            .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+        )
       }
     } catch {
       setMessages((prev) => {
@@ -262,300 +402,382 @@ export default function AdvisorPage() {
   const charsLeft = MAX_LENGTH - input.length
   const nearLimit = charsLeft < 200
   const summary = raceContextSummary(raceContext)
+  const groups = groupByDate(conversations)
 
   return (
-    <div className="fixed inset-x-0 top-26 bottom-0 flex flex-col bg-white">
+    <>
+      <div className="fixed inset-x-0 top-26 bottom-0 flex">
 
-      {/* Header */}
-      <div className="shrink-0 border-b border-slate-100 px-4 sm:px-6 py-3 bg-white">
-        <div className="max-w-2xl mx-auto flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center shrink-0">
-            <span className="text-white text-xs font-black tracking-wide">RTW</span>
-          </div>
-          <div className="min-w-0 flex-1">
-            <h1 className="font-bold text-slate-900 text-sm leading-none">Campaign Coach</h1>
-            {summary ? (
-              <p className="text-xs text-blue-600 mt-0.5 truncate">{summary}</p>
-            ) : (
-              <p className="text-xs text-slate-400 mt-0.5">Ask anything about fundraising, messaging, voter contact, or strategy.</p>
-            )}
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {!empty && (
+        {/* Sidebar — desktop only, shown when logged in */}
+        {user && (
+          <div className="hidden md:flex w-56 lg:w-64 shrink-0 flex-col border-r border-slate-100 bg-slate-50">
+            <div className="shrink-0 p-3 border-b border-slate-100">
               <button
-                onClick={resetConversation}
+                onClick={startNewConversation}
                 disabled={streaming}
-                title="New conversation"
-                className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-50 disabled:opacity-40 transition-colors"
+                className="w-full flex items-center justify-center gap-1.5 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-white border border-slate-200 hover:border-slate-300 rounded-lg transition-colors disabled:opacity-40"
               >
-                <RotateCcw size={13} />
-                <span className="hidden sm:inline">New chat</span>
+                <Plus size={13} /> New chat
               </button>
-            )}
-            <button
-              onClick={() => setShowContextForm((v) => !v)}
-              className={cn(
-                'flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors',
-                showContextForm
-                  ? 'bg-blue-50 text-blue-700'
-                  : summary
-                  ? 'bg-blue-50 text-blue-600 hover:bg-blue-100'
-                  : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'
-              )}
-            >
-              <Settings2 size={13} />
-              <span className="hidden sm:inline">
-                {summary ? 'Edit race' : 'Set race'}
-              </span>
-            </button>
-            <div className="flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-              <span className="text-xs font-medium text-slate-400">Live</span>
             </div>
-          </div>
-        </div>
 
-        {/* Race context form */}
-        {showContextForm && (
-          <div className="max-w-2xl mx-auto mt-3 bg-slate-50 border border-slate-200 rounded-xl p-4">
-            <p className="text-xs font-semibold text-slate-500 mb-3">Your race — the more you fill in, the more tailored the advice</p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-              <div className="col-span-2 sm:col-span-1">
-                <label className="block text-[11px] font-medium text-slate-500 mb-1">Office seeking</label>
-                <input
-                  type="text"
-                  placeholder="e.g. City Council"
-                  value={raceContext.office}
-                  onChange={(e) => setRaceContext((c) => ({ ...c, office: e.target.value }))}
-                  className="w-full text-sm px-3 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:border-blue-300"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] font-medium text-slate-500 mb-1">State</label>
-                <select
-                  value={raceContext.state}
-                  onChange={(e) => setRaceContext((c) => ({ ...c, state: e.target.value }))}
-                  className="w-full text-sm px-3 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:border-blue-300"
-                >
-                  <option value="">Select…</option>
-                  {US_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-[11px] font-medium text-slate-500 mb-1">District / ward</label>
-                <input
-                  type="text"
-                  placeholder="e.g. District 4"
-                  value={raceContext.district}
-                  onChange={(e) => setRaceContext((c) => ({ ...c, district: e.target.value }))}
-                  className="w-full text-sm px-3 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:border-blue-300"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] font-medium text-slate-500 mb-1">Election date</label>
-                <input
-                  type="date"
-                  value={raceContext.electionDate}
-                  onChange={(e) => setRaceContext((c) => ({ ...c, electionDate: e.target.value }))}
-                  className="w-full text-sm px-3 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:border-blue-300"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] font-medium text-slate-500 mb-1">Party</label>
-                <select
-                  value={raceContext.party}
-                  onChange={(e) => setRaceContext((c) => ({ ...c, party: e.target.value }))}
-                  className="w-full text-sm px-3 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:border-blue-300"
-                >
-                  <option value="">Select…</option>
-                  <option>Democrat</option>
-                  <option>Republican</option>
-                  <option>Independent</option>
-                  <option>Green</option>
-                  <option>Libertarian</option>
-                  <option>Other / Non-partisan</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-[11px] font-medium text-slate-500 mb-1">Incumbent?</label>
-                <select
-                  value={raceContext.isIncumbent}
-                  onChange={(e) => setRaceContext((c) => ({ ...c, isIncumbent: e.target.value }))}
-                  className="w-full text-sm px-3 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:border-blue-300"
-                >
-                  <option value="">Select…</option>
-                  <option value="yes">Yes, I'm the incumbent</option>
-                  <option value="no">No, I'm the challenger</option>
-                  <option value="open">Open seat</option>
-                </select>
-              </div>
-            </div>
-            <div className="flex items-center justify-between mt-3">
-              <button onClick={clearContext} className="text-xs text-slate-400 hover:text-slate-600">
-                Clear
-              </button>
-              <button
-                onClick={saveContext}
-                className="text-xs font-semibold px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-              >
-                {contextSaved ? 'Saved ✓' : 'Save'}
-              </button>
+            <div className="flex-1 overflow-y-auto py-2">
+              {loadingConversations ? (
+                <div className="px-4 py-3 text-xs text-slate-400">Loading…</div>
+              ) : conversations.length === 0 ? (
+                <div className="px-4 py-3 text-xs text-slate-400">
+                  No saved conversations yet. Start chatting to save your history.
+                </div>
+              ) : (
+                <div className="space-y-4 px-2">
+                  {groups.map((group) => (
+                    <div key={group.label}>
+                      <p className="px-2 pb-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">{group.label}</p>
+                      <div className="space-y-0.5">
+                        {group.items.map((conv) => (
+                          <button
+                            key={conv.id}
+                            onClick={() => loadConversation(conv.id)}
+                            className={cn(
+                              'w-full text-left px-2 py-1.5 rounded-lg text-xs leading-snug transition-colors',
+                              activeConversationId === conv.id
+                                ? 'bg-blue-50 text-blue-700 font-medium'
+                                : 'text-slate-600 hover:bg-white hover:text-slate-900'
+                            )}
+                          >
+                            <span className="flex items-start gap-1.5">
+                              <MessageSquare size={11} className="shrink-0 mt-0.5 opacity-50" />
+                              <span className="line-clamp-2">{conv.title}</span>
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
-      </div>
 
-      {/* Messages */}
-      <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className="flex-1 overflow-y-auto"
-      >
-        <div className="max-w-2xl mx-auto px-4 sm:px-6 py-6">
-          {empty ? (
-            <div className="pt-6 pb-4">
-              <div className="text-center mb-8">
-                <div className="w-14 h-14 rounded-2xl bg-blue-600 flex items-center justify-center mx-auto mb-4">
-                  <span className="text-white text-lg font-black">RTW</span>
-                </div>
-                <h2 className="text-xl font-bold text-slate-900 mb-2">Campaign Coach</h2>
-                <p className="text-slate-500 text-sm max-w-md mx-auto leading-relaxed">
-                  Your AI-powered strategist for down-ballot campaigns. Ask about fundraising, voter contact, messaging, or anything else on your plate.
-                </p>
-                {!summary && (
-                  <button
-                    onClick={() => setShowContextForm(true)}
-                    className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 border border-blue-200 hover:border-blue-300 rounded-lg px-3 py-1.5 transition-colors"
-                  >
-                    <Settings2 size={12} /> Set your race for tailored advice
-                  </button>
+        {/* Main chat area */}
+        <div className="flex-1 flex flex-col min-w-0 bg-white">
+
+          {/* Header */}
+          <div className="shrink-0 border-b border-slate-100 px-4 sm:px-6 py-3 bg-white">
+            <div className="max-w-2xl mx-auto flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center shrink-0">
+                <span className="text-white text-xs font-black tracking-wide">RTW</span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <h1 className="font-bold text-slate-900 text-sm leading-none">Campaign Coach</h1>
+                {summary ? (
+                  <p className="text-xs text-blue-600 mt-0.5 truncate">{summary}</p>
+                ) : (
+                  <p className="text-xs text-slate-400 mt-0.5">Ask anything about fundraising, messaging, voter contact, or strategy.</p>
                 )}
               </div>
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider text-center mb-3">Try asking</p>
-              <div className="grid sm:grid-cols-2 gap-2">
-                {STARTERS.map((s) => (
+              <div className="flex items-center gap-2 shrink-0">
+                {!empty && (
                   <button
-                    key={s}
-                    onClick={() => send(s)}
-                    className="text-left px-4 py-3 bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-200 rounded-xl text-sm text-slate-700 hover:text-blue-700 transition-colors leading-snug"
+                    onClick={resetConversation}
+                    disabled={streaming}
+                    title="New conversation"
+                    className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-50 disabled:opacity-40 transition-colors"
                   >
-                    {s}
+                    <RotateCcw size={13} />
+                    <span className="hidden sm:inline">New chat</span>
                   </button>
-                ))}
+                )}
+                <button
+                  onClick={() => setShowContextForm((v) => !v)}
+                  className={cn(
+                    'flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg transition-colors',
+                    showContextForm
+                      ? 'bg-blue-50 text-blue-700'
+                      : summary
+                      ? 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+                      : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'
+                  )}
+                >
+                  <Settings2 size={13} />
+                  <span className="hidden sm:inline">
+                    {summary ? 'Edit race' : 'Set race'}
+                  </span>
+                </button>
+                {!user && (
+                  <button
+                    onClick={() => setShowAuth(true)}
+                    className="hidden sm:flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                    title="Sign in to save your conversation history"
+                  >
+                    Save history
+                  </button>
+                )}
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                  <span className="text-xs font-medium text-slate-400">Live</span>
+                </div>
               </div>
             </div>
-          ) : (
-            <div className="space-y-5">
-              {messages.map((msg, i) => (
-                <div key={i} className={cn('flex gap-3', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
-                  {msg.role === 'assistant' && (
-                    <div className="w-7 h-7 rounded-lg bg-blue-600 shrink-0 flex items-center justify-center mt-0.5">
-                      <span className="text-white text-[9px] font-black">RTW</span>
-                    </div>
-                  )}
-                  <div className={cn(
-                    'max-w-[82%] rounded-2xl px-4 py-3 text-sm leading-relaxed',
-                    msg.role === 'user'
-                      ? 'bg-blue-600 text-white rounded-tr-sm'
-                      : 'bg-slate-100 text-slate-800 rounded-tl-sm'
-                  )}>
-                    {msg.role === 'user' ? (
-                      msg.content
-                    ) : msg.content ? (
-                      <>
-                        <div className="prose-chat">
-                          <ReactMarkdown
-                            remarkPlugins={[remarkGfm]}
-                            components={{
-                              h2: ({ children }) => <h2 className="text-sm font-bold text-slate-900 mt-4 mb-1.5 first:mt-0">{children}</h2>,
-                              h3: ({ children }) => <h3 className="text-sm font-semibold text-slate-800 mt-3 mb-1 first:mt-0">{children}</h3>,
-                              p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-                              ul: ({ children }) => <ul className="list-disc list-outside pl-4 mb-2 space-y-0.5">{children}</ul>,
-                              ol: ({ children }) => <ol className="list-decimal list-outside pl-4 mb-2 space-y-0.5">{children}</ol>,
-                              li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-                              strong: ({ children }) => <strong className="font-semibold text-slate-900">{children}</strong>,
-                              a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">{children}</a>,
-                              hr: () => <hr className="border-slate-300 my-3" />,
-                              blockquote: ({ children }) => <blockquote className="border-l-2 border-slate-300 pl-3 italic text-slate-600">{children}</blockquote>,
-                            }}
-                          >
-                            {msg.content}
-                          </ReactMarkdown>
-                        </div>
-                        {!(i === messages.length - 1 && streaming) && (
-                          <button
-                            onClick={() => copyMessage(msg.content, i)}
-                            className="mt-2 flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-600 transition-colors"
-                          >
-                            {copiedIndex === i
-                              ? <><Check size={11} className="text-green-500" /><span className="text-green-500">Copied</span></>
-                              : <><Copy size={11} /><span>Copy</span></>
-                            }
-                          </button>
-                        )}
-                      </>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 text-slate-400">
-                        <Loader2 size={13} className="animate-spin" />
-                        {i === messages.length - 1 && streaming ? streamingStatus : 'Thinking…'}
-                      </span>
-                    )}
+
+            {/* Race context form */}
+            {showContextForm && (
+              <div className="max-w-2xl mx-auto mt-3 bg-slate-50 border border-slate-200 rounded-xl p-4">
+                <p className="text-xs font-semibold text-slate-500 mb-3">Your race — the more you fill in, the more tailored the advice</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                  <div className="col-span-2 sm:col-span-1">
+                    <label className="block text-[11px] font-medium text-slate-500 mb-1">Office seeking</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. City Council"
+                      value={raceContext.office}
+                      onChange={(e) => setRaceContext((c) => ({ ...c, office: e.target.value }))}
+                      className="w-full text-sm px-3 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:border-blue-300"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-500 mb-1">State</label>
+                    <select
+                      value={raceContext.state}
+                      onChange={(e) => setRaceContext((c) => ({ ...c, state: e.target.value }))}
+                      className="w-full text-sm px-3 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:border-blue-300"
+                    >
+                      <option value="">Select…</option>
+                      {US_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-500 mb-1">District / ward</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. District 4"
+                      value={raceContext.district}
+                      onChange={(e) => setRaceContext((c) => ({ ...c, district: e.target.value }))}
+                      className="w-full text-sm px-3 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:border-blue-300"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-500 mb-1">Election date</label>
+                    <input
+                      type="date"
+                      value={raceContext.electionDate}
+                      onChange={(e) => setRaceContext((c) => ({ ...c, electionDate: e.target.value }))}
+                      className="w-full text-sm px-3 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:border-blue-300"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-500 mb-1">Party</label>
+                    <select
+                      value={raceContext.party}
+                      onChange={(e) => setRaceContext((c) => ({ ...c, party: e.target.value }))}
+                      className="w-full text-sm px-3 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:border-blue-300"
+                    >
+                      <option value="">Select…</option>
+                      <option>Democrat</option>
+                      <option>Republican</option>
+                      <option>Independent</option>
+                      <option>Green</option>
+                      <option>Libertarian</option>
+                      <option>Other / Non-partisan</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-slate-500 mb-1">Incumbent?</label>
+                    <select
+                      value={raceContext.isIncumbent}
+                      onChange={(e) => setRaceContext((c) => ({ ...c, isIncumbent: e.target.value }))}
+                      className="w-full text-sm px-3 py-1.5 border border-slate-200 rounded-lg bg-white focus:outline-none focus:border-blue-300"
+                    >
+                      <option value="">Select…</option>
+                      <option value="yes">Yes, I'm the incumbent</option>
+                      <option value="no">No, I'm the challenger</option>
+                      <option value="open">Open seat</option>
+                    </select>
                   </div>
                 </div>
-              ))}
+                <div className="flex items-center justify-between mt-3">
+                  <button onClick={clearContext} className="text-xs text-slate-400 hover:text-slate-600">
+                    Clear
+                  </button>
+                  <button
+                    onClick={saveContext}
+                    className="text-xs font-semibold px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                  >
+                    {contextSaved ? 'Saved ✓' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Messages */}
+          <div
+            ref={scrollRef}
+            onScroll={handleScroll}
+            className="flex-1 overflow-y-auto"
+          >
+            {loadingConversation ? (
+              <div className="flex items-center justify-center h-full">
+                <Loader2 size={20} className="text-slate-300 animate-spin" />
+              </div>
+            ) : (
+              <div className="max-w-2xl mx-auto px-4 sm:px-6 py-6">
+                {empty ? (
+                  <div className="pt-6 pb-4">
+                    <div className="text-center mb-8">
+                      <div className="w-14 h-14 rounded-2xl bg-blue-600 flex items-center justify-center mx-auto mb-4">
+                        <span className="text-white text-lg font-black">RTW</span>
+                      </div>
+                      <h2 className="text-xl font-bold text-slate-900 mb-2">Campaign Coach</h2>
+                      <p className="text-slate-500 text-sm max-w-md mx-auto leading-relaxed">
+                        Your AI-powered strategist for down-ballot campaigns. Ask about fundraising, voter contact, messaging, or anything else on your plate.
+                      </p>
+                      {!summary && (
+                        <button
+                          onClick={() => setShowContextForm(true)}
+                          className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 border border-blue-200 hover:border-blue-300 rounded-lg px-3 py-1.5 transition-colors"
+                        >
+                          <Settings2 size={12} /> Set your race for tailored advice
+                        </button>
+                      )}
+                      {!user && (
+                        <p className="mt-3 text-xs text-slate-400">
+                          <button onClick={() => setShowAuth(true)} className="text-blue-600 hover:underline">Sign in</button>
+                          {' '}to save your conversation history across sessions.
+                        </p>
+                      )}
+                    </div>
+                    <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider text-center mb-3">Try asking</p>
+                    <div className="grid sm:grid-cols-2 gap-2">
+                      {STARTERS.map((s) => (
+                        <button
+                          key={s}
+                          onClick={() => send(s)}
+                          className="text-left px-4 py-3 bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-200 rounded-xl text-sm text-slate-700 hover:text-blue-700 transition-colors leading-snug"
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-5">
+                    {messages.map((msg, i) => (
+                      <div key={i} className={cn('flex gap-3', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
+                        {msg.role === 'assistant' && (
+                          <div className="w-7 h-7 rounded-lg bg-blue-600 shrink-0 flex items-center justify-center mt-0.5">
+                            <span className="text-white text-[9px] font-black">RTW</span>
+                          </div>
+                        )}
+                        <div className={cn(
+                          'max-w-[82%] rounded-2xl px-4 py-3 text-sm leading-relaxed',
+                          msg.role === 'user'
+                            ? 'bg-blue-600 text-white rounded-tr-sm'
+                            : 'bg-slate-100 text-slate-800 rounded-tl-sm'
+                        )}>
+                          {msg.role === 'user' ? (
+                            msg.content
+                          ) : msg.content ? (
+                            <>
+                              <div className="prose-chat">
+                                <ReactMarkdown
+                                  remarkPlugins={[remarkGfm]}
+                                  components={{
+                                    h2: ({ children }) => <h2 className="text-sm font-bold text-slate-900 mt-4 mb-1.5 first:mt-0">{children}</h2>,
+                                    h3: ({ children }) => <h3 className="text-sm font-semibold text-slate-800 mt-3 mb-1 first:mt-0">{children}</h3>,
+                                    p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                                    ul: ({ children }) => <ul className="list-disc list-outside pl-4 mb-2 space-y-0.5">{children}</ul>,
+                                    ol: ({ children }) => <ol className="list-decimal list-outside pl-4 mb-2 space-y-0.5">{children}</ol>,
+                                    li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+                                    strong: ({ children }) => <strong className="font-semibold text-slate-900">{children}</strong>,
+                                    a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">{children}</a>,
+                                    hr: () => <hr className="border-slate-300 my-3" />,
+                                    blockquote: ({ children }) => <blockquote className="border-l-2 border-slate-300 pl-3 italic text-slate-600">{children}</blockquote>,
+                                  }}
+                                >
+                                  {msg.content}
+                                </ReactMarkdown>
+                              </div>
+                              {!(i === messages.length - 1 && streaming) && (
+                                <button
+                                  onClick={() => copyMessage(msg.content, i)}
+                                  className="mt-2 flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-600 transition-colors"
+                                >
+                                  {copiedIndex === i
+                                    ? <><Check size={11} className="text-green-500" /><span className="text-green-500">Copied</span></>
+                                    : <><Copy size={11} /><span>Copy</span></>
+                                  }
+                                </button>
+                              )}
+                            </>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 text-slate-400">
+                              <Loader2 size={13} className="animate-spin" />
+                              {i === messages.length - 1 && streaming ? streamingStatus : 'Thinking…'}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="h-2" />
+              </div>
+            )}
+          </div>
+
+          {/* Input */}
+          <div className="shrink-0 border-t border-slate-100 bg-white px-4 sm:px-6 py-3">
+            <div className="max-w-2xl mx-auto">
+              {inputError && (
+                <p className="text-xs text-red-500 mb-2 px-1">{inputError}</p>
+              )}
+              <div className={cn(
+                'flex items-end gap-2 rounded-2xl border bg-slate-50 px-3 py-2 transition-colors focus-within:bg-white',
+                inputError ? 'border-red-300 focus-within:border-red-400' : 'border-slate-200 focus-within:border-blue-300'
+              )}>
+                <textarea
+                  ref={inputRef}
+                  value={input}
+                  onChange={handleChange}
+                  onKeyDown={handleKeyDown}
+                  onDrop={handleDrop}
+                  onDragOver={(e) => e.preventDefault()}
+                  onPaste={handlePaste}
+                  placeholder="Ask your Campaign Coach anything…"
+                  rows={1}
+                  maxLength={MAX_LENGTH}
+                  className="flex-1 resize-none bg-transparent py-1.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none leading-relaxed"
+                  style={{ maxHeight: '160px' }}
+                />
+                <button
+                  onClick={() => send(input)}
+                  disabled={!input.trim() || streaming}
+                  className="w-8 h-8 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 disabled:cursor-not-allowed flex items-center justify-center transition-colors shrink-0 mb-0.5"
+                >
+                  {streaming
+                    ? <Loader2 size={14} className="text-slate-400 animate-spin" />
+                    : <ArrowUp size={14} className="text-white" />
+                  }
+                </button>
+              </div>
+              <div className="flex justify-between items-center mt-1.5 px-1">
+                <p className="text-[11px] text-slate-400">
+                  Campaign questions only · Verify legal/compliance details with a professional
+                </p>
+                {nearLimit && (
+                  <p className={cn('text-[11px] shrink-0 ml-3', charsLeft < 50 ? 'text-red-500' : 'text-slate-400')}>
+                    {charsLeft} left
+                  </p>
+                )}
+              </div>
             </div>
-          )}
-          <div className="h-2" />
+          </div>
         </div>
       </div>
 
-      {/* Input */}
-      <div className="shrink-0 border-t border-slate-100 bg-white px-4 sm:px-6 py-3">
-        <div className="max-w-2xl mx-auto">
-          {inputError && (
-            <p className="text-xs text-red-500 mb-2 px-1">{inputError}</p>
-          )}
-          <div className={cn(
-            'flex items-end gap-2 rounded-2xl border bg-slate-50 px-3 py-2 transition-colors focus-within:bg-white',
-            inputError ? 'border-red-300 focus-within:border-red-400' : 'border-slate-200 focus-within:border-blue-300'
-          )}>
-            <textarea
-              ref={inputRef}
-              value={input}
-              onChange={handleChange}
-              onKeyDown={handleKeyDown}
-              onDrop={handleDrop}
-              onDragOver={(e) => e.preventDefault()}
-              onPaste={handlePaste}
-              placeholder="Ask your Campaign Coach anything…"
-              rows={1}
-              maxLength={MAX_LENGTH}
-              className="flex-1 resize-none bg-transparent py-1.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none leading-relaxed"
-              style={{ maxHeight: '160px' }}
-            />
-            <button
-              onClick={() => send(input)}
-              disabled={!input.trim() || streaming}
-              className="w-8 h-8 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 disabled:cursor-not-allowed flex items-center justify-center transition-colors shrink-0 mb-0.5"
-            >
-              {streaming
-                ? <Loader2 size={14} className="text-slate-400 animate-spin" />
-                : <ArrowUp size={14} className="text-white" />
-              }
-            </button>
-          </div>
-          <div className="flex justify-between items-center mt-1.5 px-1">
-            <p className="text-[11px] text-slate-400">
-              Campaign questions only · Verify legal/compliance details with a professional
-            </p>
-            {nearLimit && (
-              <p className={cn('text-[11px] shrink-0 ml-3', charsLeft < 50 ? 'text-red-500' : 'text-slate-400')}>
-                {charsLeft} left
-              </p>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
+      {showAuth && <AuthModal onClose={() => setShowAuth(false)} />}
+    </>
   )
 }
