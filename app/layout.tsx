@@ -39,6 +39,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const analyticsToken = process.env.NEXT_PUBLIC_CF_BEACON_TOKEN
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+      <head>
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-G0G4NVWZ3L" />
+        <script dangerouslySetInnerHTML={{ __html: `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-G0G4NVWZ3L');` }} />
+      </head>
       <body className="min-h-screen flex flex-col">
         <AuthProvider>
         <div style={{
@@ -80,13 +84,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Nav />
         <main className="flex-1">{children}</main>
         <Footer />
-        <Script
-          src="https://www.googletagmanager.com/gtag/js?id=G-G0G4NVWZ3L"
-          strategy="afterInteractive"
-        />
-        <Script id="ga4-init" strategy="afterInteractive">
-          {`window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-G0G4NVWZ3L');`}
-        </Script>
         {analyticsToken && (
           <Script
             defer
