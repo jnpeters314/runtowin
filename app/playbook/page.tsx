@@ -1,5 +1,11 @@
+'use client'
+
 import Link from 'next/link'
-import { ArrowRight, ChevronRight } from 'lucide-react'
+import { ArrowRight, ChevronRight, Download, BookOpen } from 'lucide-react'
+import { useState } from 'react'
+import { cn } from '@/lib/utils'
+
+const PLAYBOOK_PDF = 'https://drive.google.com/uc?export=download&id=1qMhRjI9rQrWuLxhP1V_Z08U_Yx_1FzDC'
 
 const playbooks = [
   {
@@ -110,19 +116,131 @@ const playbooks = [
   },
 ]
 
+function DownloadForm({ className }: { className?: string }) {
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [done, setDone] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    if (!email.trim()) return
+    setLoading(true)
+    setError('')
+
+    try {
+      const res = await fetch('/api/waitlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: email.trim(),
+          name: name.trim() || undefined,
+          source: 'playbook-download',
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setError(data.error ?? 'Something went wrong.'); return }
+
+      setDone(true)
+      window.open(PLAYBOOK_PDF, '_blank')
+    } catch {
+      setError('Something went wrong. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (done) {
+    return (
+      <div className={cn('text-center py-2', className)}>
+        <p className="text-white font-semibold mb-1">Your download is starting…</p>
+        <p className="text-slate-300 text-sm mb-3">
+          If it doesn't open automatically,{' '}
+          <a href={PLAYBOOK_PDF} target="_blank" rel="noopener noreferrer" className="underline hover:text-white">
+            click here
+          </a>.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className={cn('w-full', className)}>
+      <div className="flex flex-col sm:flex-row gap-2">
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Your name (optional)"
+          className="flex-1 px-4 py-2.5 rounded-lg bg-white/10 border border-white/20 text-white placeholder:text-slate-400 text-sm focus:outline-none focus:border-white/50 focus:bg-white/15"
+        />
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="Your email *"
+          required
+          className="flex-1 px-4 py-2.5 rounded-lg bg-white/10 border border-white/20 text-white placeholder:text-slate-400 text-sm focus:outline-none focus:border-white/50 focus:bg-white/15"
+        />
+        <button
+          type="submit"
+          disabled={loading || !email.trim()}
+          className="shrink-0 inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-blue-500 hover:bg-blue-400 disabled:bg-white/20 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition-colors"
+        >
+          <Download size={15} />
+          {loading ? 'One sec…' : 'Download free'}
+        </button>
+      </div>
+      {error && <p className="text-red-300 text-xs mt-2">{error}</p>}
+      <p className="text-slate-500 text-xs mt-2">Free download. No spam, ever.</p>
+    </form>
+  )
+}
+
 export default function PlaybookPage() {
   return (
     <>
-      <div className="bg-navy-900 text-white py-12 sm:py-16">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6">
-          <h1 className="text-3xl sm:text-4xl font-bold mb-3">Playbook</h1>
-          <p className="text-slate-300 text-lg max-w-2xl">
-            In-depth guides for every phase of your campaign — written for candidates who are running lean and need to know what actually works.
-          </p>
+      {/* PDF download hero */}
+      <div className="bg-navy-900 text-white">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-14 sm:py-20">
+          <div className="max-w-3xl">
+            <div className="inline-flex items-center gap-2 text-xs font-bold text-blue-400 uppercase tracking-widest mb-4">
+              <BookOpen size={13} /> Official Playbook
+            </div>
+            <h1 className="text-3xl sm:text-5xl font-bold mb-4 leading-tight">
+              The Run to Win<br className="hidden sm:block" /> Campaign Playbook
+            </h1>
+            <p className="text-slate-300 text-lg max-w-2xl mb-3 leading-relaxed">
+              Everything a first-time or lean-staffed candidate needs to launch, raise, contact voters, and win — in one downloadable guide.
+            </p>
+            <ul className="text-slate-400 text-sm space-y-1 mb-8">
+              {[
+                'Fundraising cadences that work from day one',
+                'Voter contact timelines and scripts',
+                'Digital strategy on a small budget',
+                'GOTV tactics for the final two weeks',
+              ].map((item) => (
+                <li key={item} className="flex items-center gap-2">
+                  <span className="w-1 h-1 rounded-full bg-blue-400 shrink-0" />
+                  {item}
+                </li>
+              ))}
+            </ul>
+            <DownloadForm className="max-w-xl" />
+          </div>
         </div>
       </div>
 
+      {/* Guides index */}
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-12 sm:py-16 space-y-14">
+        <div>
+          <h2 className="text-xl font-bold text-slate-900 mb-1">Browse the guides</h2>
+          <p className="text-slate-500 text-sm">
+            Each guide below is available to read online. Download the full playbook above to get everything in one PDF.
+          </p>
+        </div>
+
         {playbooks.map((section) => (
           <div key={section.category}>
             <div className="flex items-center gap-3 mb-6">
@@ -151,6 +269,17 @@ export default function PlaybookPage() {
             </div>
           </div>
         ))}
+
+        {/* Bottom download CTA */}
+        <div className="bg-navy-900 rounded-2xl p-8 sm:p-10">
+          <div className="max-w-2xl">
+            <h3 className="text-xl font-bold text-white mb-2">Get the full playbook as a PDF</h3>
+            <p className="text-slate-300 text-sm leading-relaxed mb-6">
+              Download everything above in one shareable document — useful for campaign kick-off meetings, volunteer training, or keeping on your phone.
+            </p>
+            <DownloadForm />
+          </div>
+        </div>
 
         {/* Coach CTA */}
         <div className="bg-slate-50 rounded-2xl p-8 sm:p-10 border border-slate-200 flex flex-col sm:flex-row items-start sm:items-center gap-6">
